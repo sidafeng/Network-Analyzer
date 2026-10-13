@@ -1,0 +1,206 @@
+﻿<!-- ============================================================
+     STEP 3 — THEMES/DARK.XAML (with implicit styles)
+     WHAT CHANGED FROM STEP 1/2:
+     ✅ Style for Button with full ControlTemplate override
+     ✅ IsMouseOver Trigger for hover effect — pure XAML, no
+        code-behind required (replaces OnMouseEnter/Leave from WinForms)
+     ✅ Style for TextBox
+     ✅ Style for DataGridRow
+     ✅ ALL styles use TargetType without x:Key = IMPLICIT STYLE
+        meaning they apply to EVERY control of that type
+        automatically, without referencing them in XAML
+
+     KEY CONCEPT — IMPLICIT STYLES:
+     A Style with TargetType but NO x:Key is called an implicit
+     style. WPF automatically applies it to every control of that
+     type in scope. This is the scalable WPF theming approach —
+     define once in the dictionary, applies everywhere.
+     ============================================================ -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ── BRUSH TOKENS (unchanged) ──────────────────────────── -->
+    <SolidColorBrush x:Key="AppBackgroundBrush"    Color="#0F1923"/>
+    <SolidColorBrush x:Key="SidebarBrush"          Color="#141E2B"/>
+    <SolidColorBrush x:Key="SurfaceBrush"          Color="#1A2535"/>
+    <SolidColorBrush x:Key="AccentBrush"           Color="#4A8EF5"/>
+    <SolidColorBrush x:Key="AccentHoverBrush"      Color="#5A9EFF"/>
+    <SolidColorBrush x:Key="TextPrimaryBrush"      Color="#E8EEF7"/>
+    <SolidColorBrush x:Key="TextSecondaryBrush"    Color="#7A90A8"/>
+    <SolidColorBrush x:Key="TextMutedBrush"        Color="#4A5E72"/>
+    <SolidColorBrush x:Key="BorderBrush"           Color="#1AFFFFFF"/>
+    <SolidColorBrush x:Key="SuccessBrush"          Color="#34C780"/>
+    <SolidColorBrush x:Key="WarningBrush"          Color="#F5A623"/>
+    <SolidColorBrush x:Key="DangerBrush"           Color="#F55A5A"/>
+    <SolidColorBrush x:Key="SuccessBgBrush"        Color="#1934C780"/>
+    <SolidColorBrush x:Key="WarningBgBrush"        Color="#19F5A623"/>
+    <SolidColorBrush x:Key="DangerBgBrush"         Color="#19F55A5A"/>
+
+    <!-- ══════════════════════════════════════════════════════════
+         STEP 3: ADD THESE IMPLICIT STYLES
+         Each one has TargetType but NO x:Key.
+         WPF applies them automatically to every matching control.
+    ══════════════════════════════════════════════════════════ -->
+
+    <!-- ── Button — full ControlTemplate override ────────────────
+         WPF Button ignores system colours by default.
+         Without this ControlTemplate, the button renders with
+         its built-in chrome and ignores our brush tokens.
+         We must rebuild it from scratch to own the visual.
+    ─────────────────────────────────────────────────────────── -->
+    <Style TargetType="{x:Type Button}">
+        <Setter Property="Background"  Value="{DynamicResource SurfaceBrush}"/>
+        <Setter Property="Foreground"  Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding"     Value="12,6"/>
+        <Setter Property="FontFamily"  Value="Segoe UI"/>
+        <Setter Property="FontSize"    Value="12"/>
+        <Setter Property="Cursor"      Value="Hand"/>
+
+        <!-- ControlTemplate replaces the default Button chrome entirely -->
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="5"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+
+                    <!-- ── Triggers — the WPF way to handle hover/press ──
+                         No code-behind. No event handlers.
+                         Pure XAML state management.
+                    ─────────────────────────────────────────────────── -->
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{DynamicResource AccentBrush}"/>
+                            <Setter Property="Foreground"
+                                    Value="White"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{DynamicResource AccentHoverBrush}"/>
+                            <Setter TargetName="border" Property="RenderTransform">
+                                <Setter.Value>
+                                    <ScaleTransform ScaleX="0.98" ScaleY="0.98"/>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ── Accent Button variant (x:Key means opt-in, not implicit) ─ -->
+    <Style x:Key="AccentButton" TargetType="{x:Type Button}"
+           BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background"  Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="Foreground"  Value="White"/>
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+
+    <!-- ── TextBox ────────────────────────────────────────────── -->
+    <Style TargetType="{x:Type TextBox}">
+        <Setter Property="Background"   Value="{DynamicResource SurfaceBrush}"/>
+        <Setter Property="Foreground"   Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="CaretBrush"   Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="BorderBrush"  Value="{DynamicResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding"      Value="8,2"/>
+        <Setter Property="FontFamily"   Value="Segoe UI"/>
+        <Setter Property="FontSize"     Value="12"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type TextBox}">
+                    <Border x:Name="border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="5">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsFocused" Value="True">
+                            <Setter TargetName="border" Property="BorderBrush"
+                                    Value="{DynamicResource AccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ── ComboBox ───────────────────────────────────────────── -->
+    <Style TargetType="{x:Type ComboBox}">
+        <Setter Property="Background"  Value="{DynamicResource SurfaceBrush}"/>
+        <Setter Property="Foreground"  Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+        <Setter Property="FontFamily"  Value="Segoe UI"/>
+        <Setter Property="FontSize"    Value="12"/>
+        <Setter Property="Padding"     Value="8,4"/>
+    </Style>
+
+    <!-- ── DataGridRow ────────────────────────────────────────── -->
+    <Style TargetType="{x:Type DataGridRow}">
+        <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ── DataGridCell ───────────────────────────────────────── -->
+    <Style TargetType="{x:Type DataGridCell}">
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type DataGridCell}">
+                    <Border Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}">
+                        <ContentPresenter/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ── ScrollBar — minimal dark style ────────────────────── -->
+    <Style TargetType="{x:Type ScrollBar}">
+        <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}"/>
+        <Setter Property="Width" Value="6"/>
+    </Style>
+
+    <Style TargetType="{x:Type DataGridColumnHeader}">
+        <Setter Property="Background"
+            Value="{DynamicResource SidebarBrush}"/>
+        <Setter Property="Foreground"
+            Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="BorderBrush"
+            Value="{DynamicResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="0,0,1,1"/>
+        <Setter Property="Padding" Value="8,5"/>
+    </Style>
+
+</ResourceDictionary>

@@ -21,6 +21,8 @@ namespace Network_Analyzer
         public byte[] RawData { get; set; } = Array.Empty<byte>();
 
         public RawCapture? OriginalPacket { get; set; }
-       
+
+        public Packet? ParsedPacket { get; set; }
+
     }
 }

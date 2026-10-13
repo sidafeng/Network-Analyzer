@@ -1,25 +1,28 @@
 ﻿<Window x:Class="Network_Analyzer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:Network_Analyzer"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="850" Width="1600">
+        Title="MainWindow" Height="850" Width="1600"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}">
     <DockPanel>
-        <Menu DockPanel.Dock="Top">
-            <MenuItem Header="File">
-                <MenuItem Header="Open" Click="MenuItem_FileOpen_Click"/>
-                <MenuItem Header="Save" Click="MenuItem_FileSave_Click"/>
-                <MenuItem Header="Save As" Click="MenuItem_FileSaveAs_Click"/>
-                <MenuItem Header="Exit"/>
+        <Menu x:Name ="MainMenu" 
+             Background="{DynamicResource SidebarBrush}"
+             Foreground="{DynamicResource TextPrimaryBrush}"
+             DockPanel.Dock="Top">
+            <MenuItem x:Name = "DropDownMenu" Header="File">
+                <MenuItem Header="Open" Foreground="#1A2535" Click="MenuItem_FileOpen_Click"/>
+                <MenuItem Header="Save" Foreground="#1A2535" Click="MenuItem_FileSave_Click"/>
+                <MenuItem Header="Save As" Foreground="#1A2535" Click="MenuItem_FileSaveAs_Click"/>
+                <MenuItem Header="Exit" Foreground="#1A2535" Click="MenuItem_Exit_Click"/>
             </MenuItem>
             <MenuItem Header="View">
-                <MenuItem Header="View All"/>
+                <MenuItem Header="Clear Grid" Foreground="#1A2535" Click="Clear_Grid_Click"/>
+                <MenuItem Header="View TimeLine" Foreground="#1A2535" Click="ViewTimeLine_Click"/>
             </MenuItem>
             <MenuItem Header="Help">
-                <MenuItem Header="About"/>
+                <MenuItem Header="About" Foreground="#1A2535" Click="MenuItem_About_Click"/>
             </MenuItem>
+  
         </Menu>
 
 
@@ -42,13 +45,28 @@
                 <TextBox x:Name="FilterTextBox"
                  Width="350"
                  Height="28"
-                 VerticalContentAlignment="Center"/>
-
+                 VerticalContentAlignment="Center"
+                 TextChanged="FilterTextBox_TextChanged"/>
+                <Popup x:Name="SuggestionPopup"
+                   PlacementTarget="{Binding ElementName=FilterTextBox}"
+                   Placement="Bottom"
+                   StaysOpen="False">
+                    <ListBox x:Name="SuggestionList"
+                     Background="{DynamicResource SurfaceBrush}"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     Width="200"
+                     MaxHeight="150"
+                     MouseDoubleClick="SuggestionList_MouseDoubleClick"/>
+                </Popup>
 
                 <Button Content="Clear"
                 Width="70"
                 Height="28"
-                Margin="5,0,0,0" />
+                Margin="5,0,0,0" 
+                VerticalContentAlignment="Center"
+                HorizontalContentAlignment="Center"
+                Padding="0"
+                Click="ClearFilter_Click"/>
             </StackPanel>
 
             <StackPanel Grid.Row="0"
@@ -63,17 +81,12 @@
                   VerticalAlignment="Center"
                   FontFamily="Source Sans Pro Black"
                   FontSize="16"
-                  Foreground="#FF08FF20"
+    
                   Checked="btnCapture_Clicked"
-                  Unchecked="btnCapture_Unclicked">
+                  Unchecked="btnCapture_Unclicked"
 
-                    <ToggleButton.Background>
-                        <LinearGradientBrush EndPoint="0.5,1"
-                                 StartPoint="0.5,0">
-                            <GradientStop Color="#FFC3C3C3" Offset="0" />
-                            <GradientStop Color="#FFFAF0F0" Offset="1" />
-                        </LinearGradientBrush>
-                    </ToggleButton.Background>
+                  Background="{DynamicResource SurfaceBrush}"
+                  Foreground="{DynamicResource SuccessBrush}">
                 </ToggleButton>
 
                 <TextBlock Text="Capture device:"
@@ -81,25 +94,33 @@
                Margin="12,0,5,0" />
 
                 <ComboBox x:Name="CaptureDeviceComboBox"
-              Width="350"
-              Height="28"
-              VerticalContentAlignment="Center" />
+                 Background="{DynamicResource SurfaceBrush}"
+                 Foreground="Black"
+                 BorderBrush="{DynamicResource BorderBrush}"
+                 Width="350"
+                 Height="28"
+                 VerticalContentAlignment="Center" />
             </StackPanel>
 
 
             <!-- ***MainDisplayArea***-->
             <DataGrid x:Name="PacketGrid"
               Grid.Row="1"
+              RowHeight="25"
               SelectionChanged="PacketGrid_Select"
               AutoGenerateColumns="False"
               IsReadOnly="True"
+              HeadersVisibility="Column"
+              Background="{DynamicResource SurfaceBrush}"
+              Foreground="{DynamicResource TextPrimaryBrush}"
               CanUserAddRows="False">
+
 
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="No." Width="60"
                         Binding="{Binding Number}" />
                     <DataGridTextColumn Header="Time" Width="150"
-                        Binding="{Binding Timestamp, StringFormat=HH:mm:ss.fff}" />
+                        Binding="{Binding Timestamp, StringFormat=HH:mm:ss}" />
                     <DataGridTextColumn Header="Source" Width="*"
                         Binding="{Binding Source}" />
                     <DataGridTextColumn Header="Source Port" Width="90"
@@ -132,21 +153,62 @@
 
                 <!-- ***3.Packet details*** -->
                 <TreeView x:Name="PacketDetailsTree"
+                  Background="{DynamicResource SurfaceBrush}"
+                  Foreground="{DynamicResource TextPrimaryBrush}"
                   Grid.Column="0">
+                    <TreeView.Resources>
+                        <Style TargetType="{x:Type TreeViewItem}">
+                            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TreeView}}"/>
+                        </Style>
+                    </TreeView.Resources>
                     <TreeViewItem Header="Select a packet to view its details" />
                 </TreeView>
 
                 <!-- ***Resize bar*** -->
                 <GridSplitter Grid.Column="1" Width="5" VerticalAlignment="Stretch" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
 
-                <!-- ***4.Raw packet bytes*** -->
-                <TextBox x:Name="HexViewer"
-                 Grid.Column="2"
-                 IsReadOnly="True"
-                 FontFamily="Consolas"
-                 Text="Raw packet bytes will appear here."
-                 VerticalScrollBarVisibility="Auto"
-                 HorizontalScrollBarVisibility="Auto" />
+                <!-- ***CLI rules Alert s*** -->
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Current rules -->
+                    <ListBox x:Name="RuleList"
+                         Grid.Row="0"
+                         FontFamily="Consolas"
+                         FontSize="13"
+                         Background="{DynamicResource SurfaceBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+                    <!-- CLI rule input -->
+                    <Border Grid.Row="1"
+                        Height="30"
+                        Margin="0,5,0,0"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1">
+
+                        <DockPanel>
+                            <TextBlock Text=">>"
+                               DockPanel.Dock="Left"
+                               FontFamily="Consolas"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,6,0"/>
+
+                            <TextBox x:Name="RuleInput"
+                                 FontFamily="Consolas"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 VerticalContentAlignment="Center"
+                                 KeyDown="EnterKey"/>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+
+
             </Grid>
             <ToggleButton x:Name="btnDarkMode"
               Width="24"
@@ -162,10 +224,10 @@
                 <ToggleButton.Template>
                     <ControlTemplate TargetType="{x:Type ToggleButton}">
                         <Border x:Name="Circle"
-                    Background="#777777"
-                    BorderBrush="#444444"
-                    BorderThickness="1"
-                    CornerRadius="20">
+                         Background="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderBrush}"
+                         BorderThickness="1"
+                         CornerRadius="20">
                             <ContentPresenter HorizontalAlignment="Center"
                                   VerticalAlignment="Center" />
                         </Border>
@@ -173,8 +235,8 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Circle"
-                            Property="Background"
-                            Value="LimeGreen" />
+                                        Property="Background"
+                                        Value="{DynamicResource AccentHoverBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

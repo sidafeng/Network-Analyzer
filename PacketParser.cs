@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
+using System.Windows.Controls;
 
 namespace Network_Analyzer
 {
@@ -25,6 +26,8 @@ namespace Network_Analyzer
             Ieee8021QPacket? vlan = packet.Extract<Ieee8021QPacket>();
             LldpPacket? llDiscovery = packet.Extract<LldpPacket>();
             MacFrame? wifi = packet.Extract<MacFrame>();
+
+            
 
             string protocol = "Unknown";
             string info = "";
@@ -52,8 +55,10 @@ namespace Network_Analyzer
             }
             else if (tcp != null)
             {
+                
                 byte[] data = tcp.PayloadData;
                 string text = Encoding.ASCII.GetString(data);
+                info = string.Join("\n", text.Split('\n').Take(3));
                 if (data.Length >= 5 && data[0] >= 20 && data[0] <= 23 && data[1] == 0x03 && data[2] <= 0x04) //checks for TLS
                 {
                     protocol = "HTTPS";
@@ -83,6 +88,7 @@ namespace Network_Analyzer
             else if (ipv4 != null)
             {
                 protocol = "IPv4";
+                
             }
             else if (ipv6 != null)
             {
@@ -110,7 +116,7 @@ namespace Network_Analyzer
                 Info = info,
                 RawData = rawPacket.Data,
                 OriginalPacket = rawPacket,
-              
+                ParsedPacket = packet
             };
         }
     }

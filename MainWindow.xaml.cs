@@ -2,39 +2,36 @@
 using PacketDotNet;
 using SharpPcap;
 using SharpPcap.LibPcap;
+using System.Buffers.Binary;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 
-//using PcapViewer;
 
 namespace Network_Analyzer
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
-        private ObservableCollection<CapturedPacket> packets = new ObservableCollection<CapturedPacket>();
+        private ObservableCollection<CapturedPacket> packets = new ObservableCollection<CapturedPacket>();//sharpcap class
+        private ICollectionView packetDisplay; //WPF, helps to filter datagrid
         public MainWindow()
         {
             InitializeComponent();
-            PacketGrid.ItemsSource = packets;
-            LoadCaptureDevices();
+            packetDisplay = CollectionViewSource.GetDefaultView(packets);
+            PacketGrid.ItemsSource = packetDisplay;
+            DisplayNIC();
         }
         private string? currentFilePath;
         private LibPcapLiveDevice? selectNIC; //Sharpcap class
         private int packetNumber = 0;
         private bool isCapturing = false;
+        TimeLine timeline = new TimeLine();
 
 
         private async void MenuItem_FileOpen_Click(object sender, RoutedEventArgs e)
@@ -51,7 +48,7 @@ namespace Network_Analyzer
                 currentFilePath = openFile.FileName;
                 try
                 {
-                   await Task.Run(() => LoadFile(currentFilePath));
+                    await Task.Run(() => LoadFile(currentFilePath));
                 }
                 catch (Exception ex)
                 {
@@ -67,12 +64,16 @@ namespace Network_Analyzer
             int indexNumber = 0;
 
             CaptureFileReaderDevice device = new CaptureFileReaderDevice(fileName); //from SharpPcap, reads files
-            
+
             device.OnPacketArrival += (object sender, PacketCapture e) =>
             {
                 RawCapture rawPacket = e.GetPacket(); //saves the packet for export/saving later
-                
+
                 CapturedPacket row = PacketParser.ParsePacket(++indexNumber, rawPacket);
+                if (indexNumber == 1)
+                {
+                    timeline.StartTime = row.Timestamp;
+                }
                 Dispatcher.Invoke(() => packets.Add(row));
             };
 
@@ -81,13 +82,17 @@ namespace Network_Analyzer
                 device.Open();
                 device.Capture();
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
-                MessageBox.Show("File open failed!");
+                MessageBox.Show(ex.ToString(), "File open failed!");
             }
             finally
             {
                 device.Close();
+            }
+            if (packets.Count > 0)
+            {
+                timeline.EndTime = packets[packets.Count - 1].Timestamp;
             }
         }
 
@@ -98,19 +103,31 @@ namespace Network_Analyzer
             if (selectedPacket == null)
             {
                 return;
-            } 
+            }
             PacketDetails(selectedPacket);
+
         }
 
         private void PacketDetails(CapturedPacket packet)//display for detail section
         {
+
             PacketDetailsTree.Items.Clear();
 
             byte[] data = packet.RawData;
 
+            // check for proper header length
+            if (data.Length < 14)
+            {
+                PacketDetailsTree.Items.Add(new TreeViewItem
+                {
+                    Header = "Invalid Ethernet header."
+                });
+                return;
+            }
+
             TreeViewItem frame = new TreeViewItem
             {
-                Header = $"frame {packet.Number}",
+                Header = $"Frame {packet.Number}",
                 IsExpanded = true
             };
 
@@ -119,13 +136,6 @@ namespace Network_Analyzer
             frame.Items.Add($"Packet size {packet.Length} bytes");
 
             PacketDetailsTree.Items.Add(frame);
-
-            // check for proper header length
-            if (data.Length < 14)
-            {
-                AddMessage("Invalid Packet Header");
-                return;
-            }
 
             TreeViewItem ethernet = new TreeViewItem
             {
@@ -152,71 +162,65 @@ namespace Network_Analyzer
 
             PacketDetailsTree.Items.Add(ethernet);
 
+            if (packet.OriginalPacket == null)
+            {
+                return;
+            }
+            Packet parsedPacket = Packet.ParsePacket(packet.OriginalPacket.LinkLayerType, packet.OriginalPacket.Data);
+
+
+
             // 0x0800 means the Ethernet payload is IPv4.
-            if (etherType != 0x0800)//////////////////////////////////
+            if (etherType == 0x0800)
             {
-                AddMessage("This is not an IPv4 Ethernet packet yet.");
-                return;
-            }
+                int ipOffset = 14;
 
-            int ipOffset = 14;
+                int version = data[ipOffset] >> 4;
+                int ipHeaderLength = (data[ipOffset] & 0x0F) * 4;
+                int ttl = data[ipOffset + 8];
+                int protocolNumber = data[ipOffset + 9];
 
-            if (data.Length < ipOffset + 20)
-            {
-                AddMessage("Packet is too short to contain an IPv4 header.");
-                return;
-            }
+                string sourceIp = data[ipOffset + 12] + "." + data[ipOffset + 13] + "." + data[ipOffset + 14] + "." + data[ipOffset + 15];
+                string destinationIp = data[ipOffset + 16] + "." + data[ipOffset + 17] + "." + data[ipOffset + 18] + "." + data[ipOffset + 19];
 
-            int version = data[ipOffset] >> 4;
-            int ipHeaderLength = (data[ipOffset] & 0x0F) * 4;
-            int ttl = data[ipOffset + 8];
-            int protocolNumber = data[ipOffset + 9];
+                TreeViewItem ipv4 = new TreeViewItem
+                {
+                    Header = "Internet Protocol Version 4",
+                    IsExpanded = true
+                };
+                ipv4.Items.Add($"Version: {version}");
+                ipv4.Items.Add($"Header length: {ipHeaderLength} bytes");
+                ipv4.Items.Add($"Time to live: {ttl}");
+                ipv4.Items.Add($"Protocol: {(PacketDotNet.ProtocolType)protocolNumber}");
+                ipv4.Items.Add($"Source address: {sourceIp}");
+                ipv4.Items.Add($"Destination address: {destinationIp}");
 
-            string sourceIp = ReadIPv4Address(data, ipOffset + 12);
-            string destinationIp = ReadIPv4Address(data, ipOffset + 16);
+                PacketDetailsTree.Items.Add(ipv4);
 
-            TreeViewItem ipv4 = new TreeViewItem
-            {
-                Header = "Internet Protocol Version 4",
-                IsExpanded = true
-            };
+                int transportOffset = ipOffset + ipHeaderLength;
 
-            AddField(ipv4, "Version", version.ToString());
-            AddField(ipv4, "Header length", $"{ipHeaderLength} bytes");
-            AddField(ipv4, "Time to live", ttl.ToString());
-            AddField(ipv4, "Protocol", GetProtocolName(protocolNumber));
-            AddField(ipv4, "Source address", sourceIp);
-            AddField(ipv4, "Destination address", destinationIp);
-
-            PacketDetailsTree.Items.Add(ipv4);
-
-            int transportOffset = ipOffset + ipHeaderLength;
-
-            if (protocolNumber == 6)
-            {
-                ShowTcpDetails(data, transportOffset);
-            }
-            else if (protocolNumber == 17)
-            {
-                ShowUdpDetails(data, transportOffset);
+                if (protocolNumber == 6)
+                {
+                    ShowTcpDetails(data, transportOffset);
+                }
+                else if (protocolNumber == 17)
+                {
+                    ShowUdpDetails(data, transportOffset);
+                }
             }
         }
 
         private void ShowTcpDetails(byte[] data, int tcpOffset)
         {
-            if (data.Length < tcpOffset + 20)
-            {
-                AddMessage("Packet is too short to contain a TCP header.");
-                return;
-            }
-
-            ushort sourcePort = ReadUInt16BigEndian(data, tcpOffset);
-            ushort destinationPort = ReadUInt16BigEndian(data, tcpOffset + 2);
-            uint sequenceNumber = ReadUInt32BigEndian(data, tcpOffset + 4);
-            uint acknowledgmentNumber = ReadUInt32BigEndian(data, tcpOffset + 8);
+            int sourcePort = ((data[tcpOffset] << 8) | data[tcpOffset + 1]);
+            int destinationPort = ((data[tcpOffset + 2] << 8) | data[tcpOffset + 3]);
+            long sequenceNumber = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(tcpOffset + 4, 4));
+            long acknowledgmentNumber = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(tcpOffset + 8, 4));
 
             int tcpHeaderLength = (data[tcpOffset + 12] >> 4) * 4;
             byte flags = data[tcpOffset + 13];
+            int payloadOffset = tcpOffset + tcpHeaderLength;
+
 
             TreeViewItem tcp = new TreeViewItem
             {
@@ -224,27 +228,27 @@ namespace Network_Analyzer
                 IsExpanded = true
             };
 
-            AddField(tcp, "Source port", sourcePort.ToString());
-            AddField(tcp, "Destination port", destinationPort.ToString());
-            AddField(tcp, "Sequence number", sequenceNumber.ToString());
-            AddField(tcp, "Acknowledgment number", acknowledgmentNumber.ToString());
-            AddField(tcp, "Header length", $"{tcpHeaderLength} bytes");
-            AddField(tcp, "Flags", $"0x{flags:X2}");
+            tcp.Items.Add($"Source port: {sourcePort}");
+            tcp.Items.Add($"Destination port: {destinationPort}");
+            tcp.Items.Add($"Sequence number: {sequenceNumber}");
+            tcp.Items.Add($"Acknowledgment number: {acknowledgmentNumber}");
+            tcp.Items.Add($"Header length: {tcpHeaderLength} bytes");
+            tcp.Items.Add($"Flags: 0x{flags:X2}");
+
+            if (payloadOffset < data.Length)
+            {
+                string payload = Encoding.ASCII.GetString(data, payloadOffset, data.Length - payloadOffset);
+                tcp.Items.Add($"Payload: {payload}");
+            }
 
             PacketDetailsTree.Items.Add(tcp);
         }
 
         private void ShowUdpDetails(byte[] data, int udpOffset)
         {
-            if (data.Length < udpOffset + 8)
-            {
-                AddMessage("Packet is too short to contain a UDP header.");
-                return;
-            }
-
-            ushort sourcePort = ReadUInt16BigEndian(data, udpOffset);
-            ushort destinationPort = ReadUInt16BigEndian(data, udpOffset + 2);
-            ushort udpLength = ReadUInt16BigEndian(data, udpOffset + 4);
+            int sourcePort = ((data[udpOffset] << 8) | data[udpOffset + 1]);
+            int destinationPort = (data[udpOffset + 2] << 8) | data[udpOffset + 3];
+            int udpLength = ((data[udpOffset + 4] << 8) | data[udpOffset + 5]);
 
             TreeViewItem udp = new TreeViewItem
             {
@@ -252,55 +256,10 @@ namespace Network_Analyzer
                 IsExpanded = true
             };
 
-            AddField(udp, "Source port", sourcePort.ToString());
-            AddField(udp, "Destination port", destinationPort.ToString());
-            AddField(udp, "Length", $"{udpLength} bytes");
-
+            udp.Items.Add($"Source port: {sourcePort}");
+            udp.Items.Add($"Destination port: {destinationPort}");
+            udp.Items.Add($"Length: {udpLength} bytes");
             PacketDetailsTree.Items.Add(udp);
-        }
-
-        private void AddField(TreeViewItem parent, string name, string value)
-        {
-            parent.Items.Add(new TreeViewItem{Header = $"{name}: {value}" });
-        }
-
-        private void AddMessage(string message)
-        {
-            PacketDetailsTree.Items.Add(new TreeViewItem
-            {
-                Header = message
-            });
-        }
-
-        private ushort ReadUInt16BigEndian(byte[] data, int offset)
-        {
-            return (ushort)((data[offset] << 8) | data[offset + 1]);
-        }
-
-        private uint ReadUInt32BigEndian(byte[] data, int offset)
-        {
-            return (uint)(
-                (data[offset] << 24) |
-                (data[offset + 1] << 16) |
-                (data[offset + 2] << 8) |
-                data[offset + 3]);
-        }
-
-        private string ReadIPv4Address(byte[] data, int offset)
-        {
-            return $"{data[offset]}.{data[offset + 1]}." +
-                   $"{data[offset + 2]}.{data[offset + 3]}";
-        }
-
-        private string GetProtocolName(int protocolNumber)
-        {
-            return protocolNumber switch
-            {
-                1 => "ICMP (1)",
-                6 => "TCP (6)",
-                17 => "UDP (17)",
-                _ => $"Unknown ({protocolNumber})"
-            };
         }
 
         private void LiveDevice_OnPacketArrival(object sender, PacketCapture e)
@@ -308,6 +267,10 @@ namespace Network_Analyzer
             RawCapture rawPacket = e.GetPacket();
             CapturedPacket row = PacketParser.ParsePacket(++packetNumber, rawPacket);
             Dispatcher.Invoke(() => packets.Add(row));
+            if (packetNumber == 1)
+            {
+                timeline.StartTime = row.Timestamp;
+            }
         }
 
         private void btnCapture_Clicked(object sender, RoutedEventArgs e)
@@ -324,19 +287,29 @@ namespace Network_Analyzer
             packetNumber = 0;
 
             PacketDetailsTree.Items.Clear();
-            HexViewer.Clear();
 
             selectNIC.OnPacketArrival += LiveDevice_OnPacketArrival;
-            selectNIC.Open();
-            selectNIC.StartCapture();
+
+            try //ensures the network card can capture
+            {
+                selectNIC.Open();
+                selectNIC.StartCapture();
+            }
+            catch (Exception)
+            {
+                MessageBox.Show("No permission given!");
+                selectNIC.OnPacketArrival -= LiveDevice_OnPacketArrival;
+                selectNIC.Close();
+                selectNIC = null;
+                return;
+
+            }
 
             isCapturing = true;
 
             btnCapture.Content = "CAPTURING";
             btnCapture.Foreground = Brushes.Red;
         }
-
-
 
         private void btnCapture_Unclicked(object sender, RoutedEventArgs e)
         {
@@ -350,11 +323,14 @@ namespace Network_Analyzer
             }
             isCapturing = false;
             btnCapture.Content = "CAPTURE";
-            btnCapture.Foreground = Brushes.LimeGreen; 
-
+            btnCapture.Foreground = Brushes.LimeGreen;
+            if (packets.Count > 0)
+            {
+                timeline.EndTime = packets[packets.Count - 1].Timestamp;
+            }
         }
 
-        private void LoadCaptureDevices()
+        private void DisplayNIC()
         {
             CaptureDeviceComboBox.Items.Clear();
 
@@ -375,14 +351,12 @@ namespace Network_Analyzer
                 if (CaptureDeviceComboBox.Items.Count > 0)
                 {
                     CaptureDeviceComboBox.SelectedIndex = 0;
-                } 
+                }
 
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    ex.Message,
-                    "Unable to list network devices");
+                MessageBox.Show(ex.Message, "Unable to list network devices");
             }
         }
         //save files
@@ -395,60 +369,58 @@ namespace Network_Analyzer
                 DefaultExt = ".pcap"
             };
 
+            if (packets.Count == 0)
+            {
+                MessageBox.Show("There is nothing to save");
+                return;
+            }
+
             if (saveFile.ShowDialog() == true)
             {
                 currentFilePath = saveFile.FileName;
-                SavePackets(currentFilePath);
+                SavePackets(saveFile.FileName);
 
-                Title = $"Pcap Viewer - {System.IO.Path.GetFileName(currentFilePath)}";
+                Title = $"Pcap Viewer - {currentFilePath}";
             }
         }
 
         private void MenuItem_FileSave_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(currentFilePath))
+            if (currentFilePath != null)
             {
-                MenuItem_FileSaveAs_Click(sender, e);
-                return;
+                SavePackets(currentFilePath);
             }
-
-            SavePackets(currentFilePath);
         }
 
         private void SavePackets(string fileName)
         {
-            RawCapture? firstPacket = null;
+            //this part of the code need to capture the linked layer type from a packet.
+            //the linked layer type is needed to format the file.
+            RawCapture? sample = null;
 
-            foreach (CapturedPacket packet in packets)
+            foreach (var i in packets)
             {
-                if (packet.OriginalPacket != null)
+                if (i.OriginalPacket != null)
                 {
-                    firstPacket = packet.OriginalPacket;
+                    sample = i.OriginalPacket;
                     break;
                 }
             }
 
-            if (firstPacket == null)
-            {
-                MessageBox.Show("There are no packets to save.");
-                return;
-            }
-
-            CaptureFileWriterDevice writer =
-                new CaptureFileWriterDevice(fileName, FileMode.Create);
+            CaptureFileWriterDevice writer = new CaptureFileWriterDevice(fileName, FileMode.Create);//Sharpcap object
 
             try
             {
-                writer.Open(new DeviceConfiguration
+                writer.Open(new DeviceConfiguration //sharpcap object
                 {
-                    LinkLayerType = firstPacket.LinkLayerType
+                    LinkLayerType = sample.LinkLayerType
                 });
 
-                foreach (CapturedPacket packet in packets)
+                foreach (var i in packets)
                 {
-                    if (packet.OriginalPacket != null)
+                    if (i.OriginalPacket != null)
                     {
-                        writer.Write(packet.OriginalPacket);
+                        writer.Write(i.OriginalPacket);
                     }
                 }
             }
@@ -458,18 +430,180 @@ namespace Network_Analyzer
             }
         }
 
+        //private readonly Brush darkerGray = new SolidColorBrush(Color.FromRgb(45, 45, 45));
+        //private readonly Brush moreDark = new SolidColorBrush(Color.FromRgb(30, 30, 30));
+
+        private void ApplyTheme(string themeFile)
+        {
+            var dictionaries = System.Windows.Application.Current.Resources.MergedDictionaries;
+            dictionaries.Clear(); // Only use this if these are your only app-level merged dictionaries.
+            dictionaries.Add(new ResourceDictionary
+            {
+                Source = new Uri($"Theme/{themeFile}", UriKind.Relative)
+            });
+        }
 
         private void DarkMode_Checked(object sender, RoutedEventArgs e)
         {
-            Background = Brushes.Black;
+
+            ApplyTheme("Dark.xaml");
+
+            //Background = moreDark;
+            //Foreground = Brushes.White;
+            //PacketGrid.Background = darkerGray;
+            //PacketGrid.Foreground = Brushes.White;
+
+            //Style cellStyle = new Style(typeof(DataGridCell));
+
+            //cellStyle.Setters.Add(new Setter(Control.BackgroundProperty, darkerGray));
+            //cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.White));
+
+            //PacketGrid.CellStyle = cellStyle;
+            //PacketDetailsTree.Background = darkerGray;
+            //PacketDetailsTree.Foreground = Brushes.White;
+
+
+            //cliView.Background = darkerGray;
+            //cliView.Foreground = Brushes.White;
+            //FilterTextBox.Background = darkerGray;
+            //FilterTextBox.Foreground = Brushes.White;
+            //SuggestionList.Background = darkerGray;
+            //SuggestionList.Foreground = Brushes.White;
+            ////CaptureDeviceComboBox.Background = Brushes.DimGray;
+            ////CaptureDeviceComboBox.Foreground = Brushes.White;
+            //Style headerStyle = new Style(typeof(DataGridColumnHeader));
+            //headerStyle.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.DarkSlateGray));
+            //headerStyle.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.White));
+
+
+            //PacketGrid.ColumnHeaderStyle = headerStyle;
+
+
+            //MainMenu.Background = moreDark;
+            //MainMenu.Foreground = Brushes.White;
+            ////DropDownMenu.Background = moreDark;
+            ////DropDownMenu.Foreground = Brushes.White;
+
         }
 
         private void DarkMode_Unchecked(object sender, RoutedEventArgs e)
         {
-            Background = Brushes.White;
+
+            ApplyTheme("Light.xaml");
+
+
+            //MainMenu.Background = Brushes.White;
+            //MainMenu.Foreground = Brushes.Black;
+            //Background = Brushes.White;
+            //Foreground = Brushes.Black;
+            //PacketGrid.Background = Brushes.WhiteSmoke;
+            //PacketGrid.Foreground = Brushes.Black;
+            //Style cellStyle = new Style(typeof(DataGridCell));
+
+            //cellStyle.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.WhiteSmoke));
+            //cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.Black));
+
+            //PacketGrid.CellStyle = cellStyle;
+
+            //PacketDetailsTree.Background = Brushes.White;
+            //PacketDetailsTree.Foreground = Brushes.Black;
+
+            //cliView.Background = Brushes.White;
+            //cliView.Foreground = Brushes.Black;
+            //FilterTextBox.Background = Brushes.White;
+            //FilterTextBox.Foreground = Brushes.Black;
+            ////CaptureDeviceComboBox.Background = Brushes.White;
+            ////CaptureDeviceComboBox.Foreground = Brushes.Black;
+            //Style headerStyle = new Style(typeof(DataGridColumnHeader));
+            //headerStyle.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.WhiteSmoke));
+            //headerStyle.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.Black));
+            //PacketGrid.ColumnHeaderStyle = headerStyle;
+        }
+
+        private void FilterTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            string filter = FilterTextBox.Text.Trim();
+
+            SuggestionList.ItemsSource = PacketFilter.GetSuggestions(filter);
+
+            SuggestionPopup.IsOpen = SuggestionList.Items.Count > 0;
+
+
+            packetDisplay.Filter = item =>
+            {
+                if (filter.Contains("==") && filter.Split("==")[1] != null)
+                {
+                    CapturedPacket packet = (CapturedPacket)item;
+
+                    if (filter == "")
+                        return true;
+
+                    return PacketFilter.isMatch(packet, filter);
+                }
+                return true;
+            };
+
+        }
+
+        private void SuggestionList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (SuggestionList.SelectedItem is string keyword)
+            {
+                FilterTextBox.Text = keyword;
+                FilterTextBox.CaretIndex = FilterTextBox.Text.Length;
+                SuggestionPopup.IsOpen = false;
+            }
+        }
+
+        private void ClearFilter_Click(object sender, RoutedEventArgs e)
+        {
+            FilterTextBox.Clear();
+        }
+        private void ViewTimeLine_Click(object sender, RoutedEventArgs e)
+        {
+            if (packets.Count == 0)
+            {
+                MessageBox.Show("nothing to display.");
+                return;
+            } else
+            {
+                TimeLineWindow window = new TimeLineWindow(timeline, packets, packets.Count);
+                window.Show();
+            }
+
+        }
+
+        private void MenuItem_Exit_Click(object sender, RoutedEventArgs e)
+        {
+            System.Windows.Application.Current.Shutdown(); //need this to also close timeline
+        }
+
+        private void MenuItem_About_Click(object sender, RoutedEventArgs e)
+        {
+            AboutWindow about = new AboutWindow();
+            about.ShowDialog();
+        }
+
+        private void EnterKey(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                string rule = RuleInput.Text.Trim();
+
+                //Add rule matching logic
+
+                RuleList.Items.Add(rule);
+                
+            }
+        }
+
+        public void Clear_Grid_Click(object sender, RoutedEventArgs e)
+        {
+            packets.Clear();
         }
 
 
+
     }
-    
+
 }
